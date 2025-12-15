@@ -1,0 +1,12 @@
+[workspace]
+resolver = "2"
+members = [
+    "r1csipa",
+    "halo2curves",
+    "Spartan-t256",
+    "nr-blind-sig",
+]
+
+[workspace.package]
+edition = "2021"
+authors = ["Greg Zaverucha <gregz@microsoft.com>"]
