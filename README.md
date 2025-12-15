@@ -37,6 +37,11 @@ cargo test -p nr-blind-sig
 cargo test -p ecdsa-pop
 cargo test -p spartan-t256
 ```
+Benchmarks for NR blind signautres:
+```bash
+cd nr-blind-sig
+cargo bench
+```
 
 ## License
 
