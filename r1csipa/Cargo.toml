@@ -32,7 +32,11 @@ bellpepper = { version="0.4.0", default-features = false }
 [dev-dependencies]
 rand = "0.8"
 itertools = { version = "0.10.0", default-features = false }
+criterion = "0.5"
 
+[[bench]]
+name = "ipa_benchmarks"
+harness = false
 
 [features]
 print-trace = ["ark-std/print-trace"]

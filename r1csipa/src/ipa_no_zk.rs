@@ -230,7 +230,7 @@ impl<C: CurveAffine + SerdeObject> InnerProductArg<C> {
     }
 
     // Create an inner-product argument (similar to dalek-bulletproofs but with MSM and loop parallelization)
-    pub fn create_parallel(
+    pub fn create_orig_parallel(
         transcript: &mut Transcript,
         U: &C,
         G_factors: &[C::Scalar],
@@ -458,7 +458,7 @@ impl<C: CurveAffine + SerdeObject> InnerProductArg<C> {
         }
     }
 
-    // Version using the defer strategy where all scalar mults are done as MSMs
+    // Version using the defer strategy where all scalar mults are done as MSMs and loops are parallelized
     pub fn create(
         transcript: &mut Transcript,
         U: &C,
@@ -818,8 +818,8 @@ mod tests {
     }
 
     #[test]
-    fn make_ipa_8k_parallel() {
-        test_helper_create(8192, &InnerProductArg::create_parallel);
+    fn make_ipa_8k_original_parallel() {
+        test_helper_create(8192, &InnerProductArg::create_orig_parallel);
     }
 
     #[test]

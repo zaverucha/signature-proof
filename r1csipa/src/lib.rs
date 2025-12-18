@@ -4,7 +4,7 @@ pub mod bellpepper;
 mod errors;
 mod ipa;
 mod ipa_bases;
-mod ipa_no_zk;
+pub mod ipa_no_zk;
 pub mod r1cs;
 pub mod transcript;
 pub mod utils;
