@@ -4,8 +4,9 @@ Some Rust crates for building zero-knowledge proofs of signature possession.
 
 We provide two proof systems for demonstrating knowledge of signatures without revealing the signatures themselves.  One is based on Bulletproofs and inner-product arguments and a second based on Spartan. The primary application is a contruction of round-optimal blind signatures without pairings, based on the Nyberg-Rueppel signature scheme.  The underlying components are general-purpose and can be adapted to prove possession of various signature types.   
 
-See the associated paper for more details:  
-TODO: add TITLE, AUTHORS, EPRINT info
+See the associated paper for more details:   
+*Round-Optimal Pairing-Free Blind Signatures*
+
 
 ## Crates
 The project is structured as separate crates, so that the two proofs systems `r1csipa` and `spartan-t256` can be used in other applications.
