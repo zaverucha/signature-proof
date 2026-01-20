@@ -43,7 +43,6 @@ Run tests for individual crates:
 ```bash
 cargo test -p r1csipa
 cargo test -p nr-blind-sig
-cargo test -p ecdsa-pop
 cargo test -p spartan-t256
 ```
 
