@@ -92,7 +92,7 @@ fn batch_add<C: CurveAffine>(
                 // Doubling
                 let x_squared = bases[*base_idx].x.square();
                 *z = buckets[*buck_idx].y() + buckets[*buck_idx].y(); // 2y
-                *t = acc * (x_squared + x_squared + x_squared); // acc * 3x^2
+                *t = acc * (x_squared + x_squared + x_squared + C::a()); // acc * (3x^2 + a)
                 acc *= *z;
                 continue;
             }
@@ -330,19 +330,34 @@ impl<C: CurveAffine> Schedule<C> {
     }
 }
 
+/// Window-size heuristic shared by the Pippenger MSM routines.
+fn pippenger_c(len: usize) -> usize {
+    if len < 4 {
+        1
+    } else if len < 32 {
+        3
+    } else {
+        (f64::from(len as u32)).ln().ceil() as usize
+    }
+}
+
 /// Performs a multi-scalar multiplication operation.
 ///
 /// This function will panic if coeffs and bases have a different length.
 pub fn msm_serial<C: CurveAffine>(coeffs: &[C::Scalar], bases: &[C], acc: &mut C::Curve) {
-    let coeffs: Vec<_> = coeffs.iter().map(|a| a.to_repr()).collect();
+    msm_serial_with_c(coeffs, bases, acc, pippenger_c(bases.len()));
+}
 
-    let c = if bases.len() < 4 {
-        1
-    } else if bases.len() < 32 {
-        3
-    } else {
-        (f64::from(bases.len() as u32)).ln().ceil() as usize
-    };
+/// Same as [`msm_serial`] but with an explicit Pippenger window size `c`.
+///
+/// Exposed for empirical tuning of the window size.
+pub fn msm_serial_with_c<C: CurveAffine>(
+    coeffs: &[C::Scalar],
+    bases: &[C],
+    acc: &mut C::Curve,
+    c: usize,
+) {
+    let coeffs: Vec<_> = coeffs.iter().map(|a| a.to_repr()).collect();
 
     let field_byte_size = C::Scalar::NUM_BITS.div_ceil(8u32) as usize;
     // OR all coefficients in order to make a mask to figure out the maximum number
@@ -513,19 +528,48 @@ fn msm_best_internal<C: CurveAffine + MsmImplementation>(
 ) -> C::Curve {
     assert_eq!(coeffs.len(), bases.len());
 
-    // TODO: consider adjusting it with empirical data?
-    let c = if bases.len() < 4 {
-        1
-    } else if bases.len() < 32 {
-        3
-    } else {
-        (f64::from(bases.len() as u32)).ln().ceil() as usize
-    };
+    let len = bases.len();
 
-    if c < 10 {
+    // Route everything but tiny inputs to the scheduled affine-batch path, which is empirically
+    // ~2x faster than `msm_parallel` above a few dozen points (measured on T256). The old dispatch
+    // only reached it at `c >= 10` (len > ~8100), leaving medium MSMs on the slower path. For
+    // len >= ~8100 the heuristic already gives `c >= 10`, so `max(8)` is a no-op and the timing of
+    // large MSMs is unchanged; for `a != 0` curves it additionally fixes the `batch_add` doubling
+    // path on any repeated/identity bases the old large path mishandled.
+    if len < 32 {
         return msm_parallel(coeffs, bases);
     }
 
+    let c = pippenger_c(len).max(8);
+    msm_scheduled_with_c(coeffs, bases, c)
+}
+
+/// Scheduled affine-batch Pippenger MSM with an explicit window size `c`.
+///
+/// This is the fast path used by [`msm_best_internal`] for large inputs (`c >= 10`),
+/// but it is correct for any `c >= 2` and is exposed for empirical window-size tuning.
+pub fn msm_scheduled_with_c<C: CurveAffine>(coeffs: &[C::Scalar], bases: &[C], c: usize) -> C::Curve {
+    assert_eq!(coeffs.len(), bases.len());
+
+    // The affine-batch path has no representation for the point at infinity (`Affine::from` would
+    // unwrap `None` coordinates), so drop identity bases together with their coefficients; they
+    // contribute nothing to the sum. The common no-identity case (e.g. random generators) keeps
+    // the zero-copy path. Required by callers that feed identity bases via `batch_normalize` of
+    // z=0 projective points (e.g. Spartan's `vartime_multiscalar_mul`).
+    if bases.par_iter().any(|b| bool::from(b.is_identity())) {
+        let (coeffs, bases): (Vec<C::Scalar>, Vec<C>) = coeffs
+            .iter()
+            .zip(bases.iter())
+            .filter(|(_, b)| !bool::from(b.is_identity()))
+            .map(|(s, b)| (*s, *b))
+            .unzip();
+        return msm_scheduled_inner(&coeffs, &bases, c);
+    }
+
+    msm_scheduled_inner(coeffs, bases, c)
+}
+
+fn msm_scheduled_inner<C: CurveAffine>(coeffs: &[C::Scalar], bases: &[C], c: usize) -> C::Curve {
     // coeffs to byte representation
     let coeffs: Vec<_> = coeffs.par_iter().map(|a| a.to_repr()).collect();
     // copy bases into `Affine` to skip in on curve check for every access
@@ -676,7 +720,38 @@ mod test {
     }
 
     #[test]
+    fn test_msm_identity_bases() {
+        // The scheduled path must tolerate identity (point-at-infinity) bases, which arise e.g.
+        // from `batch_normalize` of identity projective points. They contribute nothing and have
+        // no affine representation, so the MSM must filter them rather than panic.
+        use group::prime::PrimeCurveAffine;
+        for &len in &[40usize, 300, 5000] {
+            let mut points: Vec<G1Affine> =
+                (0..len).map(|_| G1::random(OsRng).to_affine()).collect();
+            let scalars: Vec<Fr> = (0..len).map(|_| Fr::random(OsRng)).collect();
+            // Sprinkle identity bases at a few positions.
+            for &i in &[0usize, 1, 7, len / 2, len - 1] {
+                points[i] = G1Affine::identity();
+            }
+            // Reference: sum only over non-identity bases.
+            let reference: G1 = points
+                .iter()
+                .zip(scalars.iter())
+                .filter(|(p, _)| !bool::from(p.is_identity()))
+                .map(|(p, s)| *p * *s)
+                .sum();
+            assert_eq!(super::msm_best(&scalars, &points), reference);
+            // Also exercise the scheduled path directly across window sizes.
+            for c in 8..=11usize {
+                assert_eq!(super::msm_scheduled_with_c(&scalars, &points, c), reference);
+            }
+        }
+    }
+
+    #[test]
     fn test_msm_cross() {
-        run_msm_cross::<G1Affine>(14, 18);
+        // Cover the medium-size range (k=5..=13, len 32..8192) routed to the scheduled path by
+        // `msm_best_internal`, as well as the large range that uses the window heuristic directly.
+        run_msm_cross::<G1Affine>(5, 18);
     }
 }

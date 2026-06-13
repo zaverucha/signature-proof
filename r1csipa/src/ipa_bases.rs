@@ -1,5 +1,5 @@
-use crate::msm_function;
 use halo2curves::ff::Field;
+use halo2curves::group::Curve;
 use halo2curves::CurveAffine;
 use rayon::prelude::*;
 
@@ -45,22 +45,25 @@ impl<C: CurveAffine<ScalarExt = F>, F: Field> IPABases<C, F> {
     }
 
     /// Split the bases at the given index, returning two separate IPABases
-    /// structures representing the left and right halves
-    pub fn split_at(&self, n: usize) -> (Self, Self) {
+    /// structures representing the left and right halves.
+    ///
+    /// Consumes `self` and moves the underlying per-base term vectors into the two
+    /// halves, avoiding any per-base cloning of the (potentially large) symbolic
+    /// representation.
+    pub fn split_at(mut self, n: usize) -> (Self, Self) {
         assert!(n <= self.bases.len(), "Split index out of bounds");
 
-        // Create new instances for left and right parts
-        let mut left = Self::new(n);
-        let mut right = Self::new(self.bases.len() - n);
-        for i in 0..n {
-            left.bases.push(self.bases[i].clone());
-            left.scalars.push(self.scalars[i].clone());
-        }
+        let right_bases = self.bases.split_off(n);
+        let right_scalars = self.scalars.split_off(n);
 
-        for i in 0..(self.bases.len() - n) {
-            right.bases.push(self.bases[n + i].clone());
-            right.scalars.push(self.scalars[n + i].clone());
-        }
+        let left = IPABases {
+            bases: self.bases,
+            scalars: self.scalars,
+        };
+        let right = IPABases {
+            bases: right_bases,
+            scalars: right_scalars,
+        };
 
         (left, right)
     }
@@ -91,25 +94,30 @@ impl<C: CurveAffine<ScalarExt = F>, F: Field> IPABases<C, F> {
         (result_scalars, result_bases)
     }
 
-    // collapse: calls msm(bases[i], scalars[i]) for all i, sets bases[i] to msm output, scalars[i] = 1
-    #[allow(dead_code)]
+    // collapse: replaces each symbolic base by the single point msm(scalars[i], bases[i]) and
+    // resets its scalar to ONE.  This caps the number of deferred terms per base (and hence the
+    // size of subsequent L/R MSMs) at the cost of one batch of small MSMs.
     pub fn collapse(&mut self) {
-        // Process each set of bases and scalars in parallel
-        let results: Vec<_> = (0..self.bases.len())
+        use halo2curves::group::Group;
+        // Materialize every symbolic base via its MSM, parallelizing ACROSS bases.
+        // Each per-base MSM is computed serially (msm_serial) to avoid nested rayon
+        // parallelism: collapsing runs a par_iter over bases, and if each inner MSM also
+        // spawned threads it would oversubscribe the pool and dominate the runtime.
+        let projective: Vec<C::Curve> = (0..self.bases.len())
             .into_par_iter()
             .map(|i| {
-                // Call msm function to compute the multi-scalar multiplication
-                let result = msm_function(&self.scalars[i], &self.bases[i]);
-                (i, result.into())
+                let mut acc = C::Curve::identity();
+                halo2curves::msm::msm_serial(&self.scalars[i], &self.bases[i], &mut acc);
+                acc
             })
             .collect();
 
-        // Update with the results
-        for (i, result) in results {
-            // Replace the vector of bases with a single element (the MSM result)
-            self.bases[i] = vec![result];
+        // Convert all results to affine using a single batched field inversion.
+        let mut affine = vec![C::identity(); projective.len()];
+        C::Curve::batch_normalize(&projective, &mut affine);
 
-            // Replace the vector of scalars with a single element (1)
+        for (i, point) in affine.into_iter().enumerate() {
+            self.bases[i] = vec![point];
             self.scalars[i] = vec![F::ONE];
         }
     }

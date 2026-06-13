@@ -135,6 +135,13 @@ impl<C: CurveAffine + SerdeObject> InnerProductArgZK<C> {
             H_bases.defer_init(&[H_factors[i]], &[H[i]]);
         }
 
+        // Periodically collapse the deferred symbolic bases (materialize them via MSM) so the L/R
+        // MSMs shrink with the vector length.  `terms_per_base` doubles each round and resets on
+        // collapse, which fires once it reaches ~`n/256` (clamped to [8, 32]).  See
+        // `ipa_no_zk::create` for the full rationale and benchmarks.
+        let mut terms_per_base = 1usize;
+        let collapse_threshold = (n / 256).clamp(8, 32);
+
         while n != 1 {
             let t2 = start_timer!(|| format!("iter n = {}", n));
             n /= 2;
@@ -203,13 +210,14 @@ impl<C: CurveAffine + SerdeObject> InnerProductArgZK<C> {
             G_bases = G_bases_L;
             H_bases = H_bases_L;
 
-            // if n == 2048 {
-            // // TODO: from early tests, collapsing at various points doesn't help.
-            //     let s = start_timer!(||format!("Collapsing at n = {}", n));
-            //     G_bases.collapse();
-            //     H_bases.collapse();
-            //     end_timer!(s);
-            // }
+            terms_per_base *= 2;
+            if terms_per_base >= collapse_threshold && n != 1 {
+                let collapse_timer = start_timer!(|| format!("Collapse at n = {}", n));
+                G_bases.collapse();
+                H_bases.collapse();
+                terms_per_base = 1;
+                end_timer!(collapse_timer);
+            }
             end_timer!(t2);
         }
 

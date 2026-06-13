@@ -17,6 +17,15 @@ use serde::{Deserialize, Serialize};
 extern crate alloc;
 use alloc::borrow::Borrow;
 use alloc::vec::Vec;
+use core::sync::atomic::{AtomicUsize, Ordering};
+
+/// Collapse threshold control for the deferred-MSM prover.
+///
+/// `0` (the default) selects an *adaptive* threshold derived from the input size; see
+/// `InnerProductArg::create` for the mechanism and rationale.  Any non-zero value forces that
+/// fixed threshold instead (used for benchmarking the tradeoff); a value larger than the input
+/// size disables collapsing entirely.
+pub static COLLAPSE_THRESHOLD: AtomicUsize = AtomicUsize::new(0);
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct InnerProductArg<C: CurveAffine> {
@@ -507,6 +516,20 @@ impl<C: CurveAffine + SerdeObject> InnerProductArg<C> {
             H_bases.defer_init(&[H_factors[i]], &[H[i]]);
         }
 
+        // Number of deferred terms currently carried by each symbolic base.  It doubles every
+        // round (via `defer`) and is reset to 1 whenever we collapse.
+        let mut terms_per_base = 1usize;
+        // Resolve the collapse threshold.  The default (0) picks an adaptive value: collapse once
+        // each symbolic base reaches ~`n/256` terms, clamped to [8, 32].  This keeps the first
+        // collapse's materialized MSMs in the efficient small-MSM regime (<= 32 elements, where
+        // halo2curves stays on the serial path and avoids nested-rayon oversubscription) while
+        // still amortizing the expensive full-size head rounds.  A non-zero atomic value forces a
+        // fixed threshold (for benchmarking; a value > n disables collapsing).
+        let collapse_threshold = match COLLAPSE_THRESHOLD.load(Ordering::Relaxed) {
+            0 => (n / 256).clamp(8, 32),
+            forced => forced,
+        };
+
         while n != 1 {
             let t2 = start_timer!(|| format!("iter n = {}", n));
             n /= 2;
@@ -567,13 +590,16 @@ impl<C: CurveAffine + SerdeObject> InnerProductArg<C> {
             G_bases = G_bases_L;
             H_bases = H_bases_L;
 
-            // if n == 2048 {
-            // // TODO: from early tests, collapsing at various points doesn't help.
-            //     let s = start_timer!(||format!("Collapsing at n = {}", n));
-            //     G_bases.collapse();
-            //     H_bases.collapse();
-            //     end_timer!(s);
-            // }
+            // Each `defer` above doubled the terms-per-base; collapse once it reaches the
+            // threshold so that subsequent L/R MSMs shrink with the vector length.
+            terms_per_base *= 2;
+            if terms_per_base >= collapse_threshold && n != 1 {
+                let collapse_timer = start_timer!(|| format!("Collapse at n = {}", n));
+                G_bases.collapse();
+                H_bases.collapse();
+                terms_per_base = 1;
+                end_timer!(collapse_timer);
+            }
             end_timer!(t2);
         }
 
@@ -817,6 +843,53 @@ mod tests {
         test_helper_create(8192, &InnerProductArg::create);
     }
 
+    // Run with: cargo test --release -p r1csipa sweep_collapse_threshold -- --ignored --nocapture
+    #[test]
+    #[ignore]
+    fn sweep_collapse_threshold() {
+        use std::time::Instant;
+        for &n in &[2048usize, 4096, 8192, 16384] {
+            let G: Vec<T256Affine> = random_bases(n);
+            let H: Vec<T256Affine> = random_bases(n);
+            let U = T256Affine::random(OsRng);
+            let a: Vec<_> = (0..n).map(|_| Scalar::random(OsRng)).collect();
+            let b: Vec<_> = (0..n).map(|_| Scalar::random(OsRng)).collect();
+            let G_factors: Vec<Scalar> = iter::repeat(Scalar::ONE).take(n).collect();
+            let y_inv = Scalar::random(OsRng);
+            let H_factors: Vec<Scalar> = exp_iter(y_inv).take(n).collect();
+
+            println!("==== n = {} ====", n);
+            for &t in &[usize::MAX, 4, 8, 16, 32, 64, 128, 256, 512] {
+                COLLAPSE_THRESHOLD.store(t, Ordering::Relaxed);
+                let run = || {
+                    InnerProductArg::create(
+                        &mut Transcript::new(b"bench"),
+                        &U,
+                        &G_factors,
+                        &H_factors,
+                        G.clone(),
+                        H.clone(),
+                        a.clone(),
+                        b.clone(),
+                    )
+                };
+                let _ = run(); // warmup
+                let reps = 8;
+                let start = Instant::now();
+                for _ in 0..reps {
+                    let _ = run();
+                }
+                let elapsed = start.elapsed() / reps;
+                let label = if t == usize::MAX {
+                    "none".to_string()
+                } else {
+                    t.to_string()
+                };
+                println!("  threshold {:>5}: {:>8.3} ms", label, elapsed.as_secs_f64() * 1e3);
+            }
+        }
+    }
+
     #[test]
     fn make_ipa_8k_original_parallel() {
         test_helper_create(8192, &InnerProductArg::create_orig_parallel);
@@ -825,5 +898,74 @@ mod tests {
     #[test]
     fn make_ipa_8k_original() {
         test_helper_create(8192, &InnerProductArg::create_orig);
+    }
+
+    // Compare the halo2curves MSM dispatch choices at the exact sizes our prover uses.
+    // The production dispatcher routes len with `ceil(ln(len)) < 10` (i.e. len < ~8103) to
+    // `msm_parallel`; this sweep checks whether the scheduled affine-batch path (forced via an
+    // explicit window size `c`) would be faster for those medium sizes.
+    // Run with: cargo test --release -p r1csipa sweep_msm_dispatch -- --ignored --nocapture
+    #[test]
+    #[ignore]
+    fn sweep_msm_dispatch() {
+        use halo2curves::msm::{msm_parallel, msm_scheduled_with_c, msm_serial_with_c};
+        use std::time::Instant;
+
+        // +1 mirrors the extra `U` term in each L/R MSM.
+        let sizes = [33usize, 257, 1025, 4097, 8193, 16385, 32769, 65537, 131073];
+
+        for &len in &sizes {
+            let bases = random_bases(len);
+            let scalars: Vec<Scalar> = (0..len).map(|_| Scalar::random(OsRng)).collect();
+
+            let reference = msm_parallel(&scalars, &bases);
+
+            let reps: u32 = if len < 1024 {
+                300
+            } else if len < 4096 {
+                40
+            } else if len < 20000 {
+                12
+            } else {
+                4
+            };
+            let bench = |f: &dyn Fn() -> T256| -> f64 {
+                let _ = f(); // warmup
+                let start = Instant::now();
+                for _ in 0..reps {
+                    let _ = f();
+                }
+                start.elapsed().as_secs_f64() * 1e3 / reps as f64
+            };
+
+            let t_par = bench(&|| msm_parallel(&scalars, &bases));
+            print!("len {:>6}: parallel {:>8.3} |", len, t_par);
+
+            // Scheduled path across candidate window sizes.
+            for c in 8..=16usize {
+                assert_eq!(
+                    msm_scheduled_with_c(&scalars, &bases, c),
+                    reference,
+                    "scheduled c={} wrong at len={}",
+                    c,
+                    len
+                );
+                let t = bench(&|| msm_scheduled_with_c(&scalars, &bases, c));
+                print!(" {}={:>6.3}", c, t);
+            }
+
+            // For the small collapse size, also sweep the serial window size.
+            if len < 64 {
+                for c in 3..=6usize {
+                    let t = bench(&|| {
+                        let mut acc = T256::identity().into();
+                        msm_serial_with_c(&scalars, &bases, &mut acc, c);
+                        acc
+                    });
+                    print!(" ser{}={:>6.3}", c, t);
+                }
+            }
+            println!();
+        }
     }
 }
