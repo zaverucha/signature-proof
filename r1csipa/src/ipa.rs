@@ -404,6 +404,7 @@ impl<C: CurveAffine + SerdeObject> InnerProductArgZK<C> {
 }
 
 #[cfg(test)]
+#[cfg(feature = "pasta")]
 mod tests {
     use super::*;
     use rand_core::OsRng;
@@ -413,11 +414,15 @@ mod tests {
     // use halo2curves::t256::Fq as Scalar;
     use halo2curves::group::prime::PrimeCurveAffine;
     use halo2curves::group::Group;
+    #[cfg(feature = "pasta")]
     use halo2curves::pasta::Fp as Scalar;
+    #[cfg(feature = "pasta")]
     use halo2curves::pasta::Vesta as Projective;
+    #[cfg(feature = "pasta")]
     use halo2curves::pasta::VestaAffine as Affine;
 
     #[test]
+    #[cfg(feature = "pasta")]
     fn test_msm() {
         let max_k = 14;
 
@@ -450,6 +455,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "pasta")]
     fn _random_bases(n: usize) -> Vec<Affine> {
         let bases = (0..n)
             .into_par_iter()
@@ -460,6 +466,7 @@ mod tests {
         affine_points
     }
 
+    #[cfg(feature = "pasta")]
     fn test_helper_create_ZK(n: usize) {
         let p: IPAParams<Affine> = IPAParams::generate("ipatestparams", n);
 

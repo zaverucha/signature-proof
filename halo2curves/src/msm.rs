@@ -6,7 +6,9 @@ use rayon::iter::{
     IndexedParallelIterator, IntoParallelRefIterator, IntoParallelRefMutIterator, ParallelIterator,
 };
 
-use crate::{pasta::VestaAffine, CurveAffine};
+#[cfg(feature = "pasta")]
+use crate::pasta::VestaAffine;
+use crate::CurveAffine;
 
 const BATCH_SIZE: usize = 64;
 
@@ -459,6 +461,7 @@ pub fn msm_parallel<C: CurveAffine>(coeffs: &[C::Scalar], bases: &[C]) -> C::Cur
 }
 
 // Helper function for Vesta-specific optimized MSM
+#[cfg(feature = "pasta")]
 pub fn vesta_specialized_msm(
     coeffs: &[crate::pasta::Fp],
     bases: &[crate::pasta::VestaAffine],

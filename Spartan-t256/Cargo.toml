@@ -77,3 +77,4 @@ t256 = []   # Use the T-256 curve (default)
 vesta = []  # Use the Vesta curve
 multicore = ["rayon"]
 profile = ["colored"]
+pasta = ["halo2curves/pasta"]

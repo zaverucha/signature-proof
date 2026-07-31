@@ -40,3 +40,4 @@ harness = false
 
 [features]
 print-trace = ["ark-std/print-trace"]
+pasta = ["halo2curves/pasta"]

@@ -13,6 +13,7 @@ pub mod serde;
 pub mod bls12381;
 pub mod bn256;
 pub mod grumpkin;
+#[cfg(feature = "pasta")]
 pub mod pasta;
 pub mod pluto_eris;
 pub mod secp256k1;
