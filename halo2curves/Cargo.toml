@@ -44,7 +44,7 @@ hex = { version = "0.4", optional = true, default-features = false, features = [
 rayon = "1.8"
 sha2 = "0.10.8"
 digest = "0.10.7"
-pasta-msm = "0.1.4"
+pasta-msm = { version = "0.1.4", optional = true }
 pasta_curves = {version = "0.5.1", features = [ "repr-c", "serde"], optional = true}
 
 [features]
@@ -54,7 +54,7 @@ bits = ["ff/bits"]
 bn256-table = []
 derive_serde = ["serde/derive", "serde_arrays", "hex"]
 print-trace = ["ark-std/print-trace"]
-pasta = ["pasta_curves"]
+pasta = ["pasta_curves", "pasta-msm"]
 
 [[bench]]
 name = "field_arith"
