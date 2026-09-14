@@ -151,4 +151,79 @@ mod test {
         msm_serial(&scalars, &bases, &mut res2.into());
         assert!(res1 == res1);
     }
+
+    #[test]
+    fn test_msm_dispatch_correct() {
+        // Validate `specialized_msm` (the production dispatch) against a serial reference for T256
+        // across the size range, including medium sizes routed to the scheduled affine-batch path,
+        // and with identity (point-at-infinity) bases mixed in.
+        use group::prime::PrimeCurveAffine;
+        for &len in &[40usize, 300, 2000, 8200] {
+            let mut bases: Vec<T256Affine> =
+                (0..len).map(|_| T256Affine::random(&mut OsRng)).collect();
+            let scalars: Vec<Fq> = (0..len).map(|_| Fq::random(&mut OsRng)).collect();
+            for &i in &[0usize, 3, len / 2, len - 1] {
+                bases[i] = T256Affine::identity();
+            }
+            let mut reference = T256::identity();
+            msm_serial(&scalars, &bases, &mut reference);
+            assert_eq!(
+                T256Affine::specialized_msm(&scalars, &bases),
+                reference,
+                "specialized_msm mismatch at len={}",
+                len
+            );
+        }
+    }
+
+    #[test]
+    fn test_msm_doubling_path() {
+        // Force the affine batch-addition doubling branch by repeating identical bases so that
+        // many land in the same Pippenger bucket. The doubling slope is `(3x^2 + a)/(2y)`; on
+        // T256 (`a = -3 != 0`) an incorrect `3x^2`-only slope yields an off-curve point and a
+        // panic. `msm_serial` uses projective (curve-complete) addition and is a correct
+        // reference for any curve.
+        let g = T256Affine::generator();
+        let h = (T256::generator() * Fq::from(7u64)).to_affine();
+        for &len in &[64usize, 200, 1500] {
+            // Alternate between two distinct points, each repeated many times.
+            let bases: Vec<T256Affine> =
+                (0..len).map(|i| if i % 2 == 0 { g } else { h }).collect();
+            // Small, repeated scalars maximise bucket collisions (and hence doublings).
+            let scalars: Vec<Fq> = (0..len).map(|i| Fq::from((i % 4 + 1) as u64)).collect();
+            let mut reference = T256::identity();
+            msm_serial(&scalars, &bases, &mut reference);
+            assert_eq!(
+                T256Affine::specialized_msm(&scalars, &bases),
+                reference,
+                "specialized_msm mismatch (doubling path) at len={}",
+                len
+            );
+        }
+    }
+
+    #[test]
+    fn test_msm_batch_normalized_identity() {
+        // Mimic Spartan's flow: identity bases arrive via `batch_normalize` of z=0 projective
+        // points, which may not be the canonical affine identity. The MSM must still handle them.
+        use group::prime::PrimeCurveAffine;
+        for &len in &[40usize, 300, 2000] {
+            let mut proj: Vec<T256> = (0..len).map(|_| T256::random(&mut OsRng)).collect();
+            for &i in &[0usize, 5, len / 2, len - 2] {
+                proj[i] = T256::identity();
+            }
+            let mut bases = vec![T256Affine::identity(); len];
+            T256::batch_normalize(&proj, &mut bases);
+
+            let scalars: Vec<Fq> = (0..len).map(|_| Fq::random(&mut OsRng)).collect();
+            let mut reference = T256::identity();
+            msm_serial(&scalars, &bases, &mut reference);
+            assert_eq!(
+                T256Affine::specialized_msm(&scalars, &bases),
+                reference,
+                "specialized_msm mismatch (batch-normalized identity) at len={}",
+                len
+            );
+        }
+    }
 }
