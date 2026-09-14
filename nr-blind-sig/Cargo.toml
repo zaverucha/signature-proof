@@ -47,7 +47,7 @@ criterion = "0.4.0"
 default = ["t256"]
 print-trace = ["ark-std/print-trace", "r1csipa/print-trace", "spartan-t256/profile"]
 t256 = []   # Use the T-256 curve to prove signatures on P256 (default)
-vesta = ["spartan-t256/vesta"]  # Use the Vesta curve to prove signatures on Pallas
+vesta = ["halo2curves/pasta", "spartan-t256/vesta"]  # Use the Vesta curve to prove signatures on Pallas
 
 [[bench]]
 name = "schemes"
