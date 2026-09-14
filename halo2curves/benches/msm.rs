@@ -17,10 +17,10 @@ use std::time::SystemTime;
 use criterion::{BenchmarkId, Criterion};
 use ff::{Field, PrimeField};
 use group::prime::PrimeCurveAffine;
-use halo2curves::{
-    msm::{msm_serial, MsmImplementation},
-    pasta::{Fp as Scalar, VestaAffine as Point},
-};
+use halo2curves::msm::{msm_serial, MsmImplementation};
+#[cfg(feature = "pasta")]
+use halo2curves::pasta::{Fp as Scalar, VestaAffine as Point};
+
 use rand_core::{RngCore, SeedableRng};
 use rand_xorshift::XorShiftRng;
 use rayon::{
@@ -37,6 +37,7 @@ const SEED: [u8; 16] = [
     0x59, 0x62, 0xbe, 0x5d, 0x76, 0x3d, 0x31, 0x8d, 0x17, 0xdb, 0x37, 0x32, 0x54, 0x06, 0xbc, 0xe5,
 ];
 
+#[cfg(feature = "pasta")]
 fn generate_curvepoints(k: u8) -> Vec<Point> {
     let n: u64 = {
         assert!(k < 64);
@@ -69,6 +70,7 @@ fn generate_curvepoints(k: u8) -> Vec<Point> {
     bases
 }
 
+#[cfg(feature = "pasta")]
 fn generate_coefficients(k: u8, bits: usize) -> Vec<Scalar> {
     let n: u64 = {
         assert!(k < 64);
@@ -121,6 +123,7 @@ fn generate_coefficients(k: u8, bits: usize) -> Vec<Scalar> {
     coeffs
 }
 
+#[cfg(feature = "pasta")]
 fn msm(c: &mut Criterion) {
     let mut group = c.benchmark_group("msm");
     let max_k = *SINGLECORE_RANGE
@@ -163,6 +166,7 @@ fn msm(c: &mut Criterion) {
     }
     group.finish();
 }
-
+#[cfg(feature = "pasta")]
 criterion_group!(benches, msm);
+#[cfg(feature = "pasta")]
 criterion_main!(benches);

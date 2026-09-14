@@ -3,6 +3,7 @@ use super::scalar::Scalar;
 use core::borrow::Borrow;
 use core::ops::{Add, Mul, MulAssign, Sub};
 use halo2curves::group::{Curve, GroupEncoding};
+
 use halo2curves::msm::MsmImplementation;
 use halo2curves::serde::Repr;
 

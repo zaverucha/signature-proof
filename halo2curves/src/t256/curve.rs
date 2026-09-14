@@ -106,11 +106,9 @@ pub(crate) fn hash_to_curve<'a>(
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::curve;
+    use crate::msm::{msm_serial, MsmImplementation};
     use crate::serde::SerdeObject;
-    use crate::{
-        curve,
-        msm::{msm_serial, MsmImplementation},
-    };
     use group::UncompressedEncoding;
     use rand_core::OsRng;
 
