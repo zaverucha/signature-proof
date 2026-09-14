@@ -293,8 +293,6 @@ where
             bases.extend([*T]);
             g_scalars.extend([delta_inv]);
 
-            
-
             *S + msm_function(&g_scalars, &bases).to_affine() + params.U * w
         } else {
             C::identity().into()
@@ -375,8 +373,8 @@ where
         );
 
         // Call IPA prover
-        let H_factors: Vec<C::Scalar> = std::iter::repeat_n(C::Scalar::ONE, params.basesH.len())
-            .collect();
+        let H_factors: Vec<C::Scalar> =
+            std::iter::repeat_n(C::Scalar::ONE, params.basesH.len()).collect();
         let proof = InnerProductArgZK::create(
             transcript,
             &params.U,
@@ -413,8 +411,8 @@ where
         let (P, Gprime_factors, _, _, _) =
             Self::r1cs2ipa(r1cs, params, transcript, &proof.T, &S.into(), None);
 
-        let H_factors: Vec<C::Scalar> = std::iter::repeat_n(C::Scalar::ONE, params.basesH.len())
-            .collect();
+        let H_factors: Vec<C::Scalar> =
+            std::iter::repeat_n(C::Scalar::ONE, params.basesH.len()).collect();
         proof.ipa_proof.verify(
             transcript,
             Gprime_factors,

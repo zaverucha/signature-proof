@@ -551,7 +551,11 @@ fn msm_best_internal<C: CurveAffine + MsmImplementation>(
 ///
 /// This is the fast path used by [`msm_best_internal`] for large inputs (`c >= 10`),
 /// but it is correct for any `c >= 2` and is exposed for empirical window-size tuning.
-pub fn msm_scheduled_with_c<C: CurveAffine>(coeffs: &[C::Scalar], bases: &[C], c: usize) -> C::Curve {
+pub fn msm_scheduled_with_c<C: CurveAffine>(
+    coeffs: &[C::Scalar],
+    bases: &[C],
+    c: usize,
+) -> C::Curve {
     assert_eq!(coeffs.len(), bases.len());
 
     // The affine-batch path has no representation for the point at infinity (`Affine::from` would

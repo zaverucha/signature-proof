@@ -185,8 +185,7 @@ mod test {
         let h = (T256::generator() * Fq::from(7u64)).to_affine();
         for &len in &[64usize, 200, 1500] {
             // Alternate between two distinct points, each repeated many times.
-            let bases: Vec<T256Affine> =
-                (0..len).map(|i| if i % 2 == 0 { g } else { h }).collect();
+            let bases: Vec<T256Affine> = (0..len).map(|i| if i % 2 == 0 { g } else { h }).collect();
             // Small, repeated scalars maximise bucket collisions (and hence doublings).
             let scalars: Vec<Fq> = (0..len).map(|i| Fq::from((i % 4 + 1) as u64)).collect();
             let mut reference = T256::identity();
