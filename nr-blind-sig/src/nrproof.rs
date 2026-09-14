@@ -29,6 +29,10 @@ use crate::types::{fp_to_fr, fq_to_fr, fr_to_fq, Fq, FqEmulatedParams, Fr, NRCur
 use crate::utils::{enforce_equal, ff_to_big};
 use ark_std::{end_timer, start_timer};
 use halo2curves::group::prime::PrimeCurveAffine;
+#[cfg(feature = "print-trace")]
+use bellpepper_core::Comparable;
+#[cfg(feature = "print-trace")]
+use num_format::{Locale, ToFormattedString};
 use r1csipa::r1cs::{R1CSInstance, R1CSProof, R1CSProofParams};
 use r1csipa::transcript::TranscriptProtocol;
 use rand_core::OsRng;
