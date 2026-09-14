@@ -885,7 +885,11 @@ mod tests {
                 } else {
                     t.to_string()
                 };
-                println!("  threshold {:>5}: {:>8.3} ms", label, elapsed.as_secs_f64() * 1e3);
+                println!(
+                    "  threshold {:>5}: {:>8.3} ms",
+                    label,
+                    elapsed.as_secs_f64() * 1e3
+                );
             }
         }
     }

@@ -28,9 +28,9 @@ use crate::poseidon::{Poseidon, PoseidonCircuit, PoseidonConstantsCircuit};
 use crate::types::{fp_to_fr, fq_to_fr, fr_to_fq, Fq, FqEmulatedParams, Fr, NRCurve, PiCurve};
 use crate::utils::{enforce_equal, ff_to_big};
 use ark_std::{end_timer, start_timer};
-use halo2curves::group::prime::PrimeCurveAffine;
 #[cfg(feature = "print-trace")]
 use bellpepper_core::Comparable;
+use halo2curves::group::prime::PrimeCurveAffine;
 #[cfg(feature = "print-trace")]
 use num_format::{Locale, ToFormattedString};
 use r1csipa::r1cs::{R1CSInstance, R1CSProof, R1CSProofParams};
@@ -181,7 +181,7 @@ impl NRProof {
         let Hm = match message.scheme {
             SchemeType::Scheme1 => {
                 let m = message.message_scheme1.unwrap();
-                
+
                 (H * m).to_affine()
             }
             SchemeType::Scheme2 => {
@@ -279,7 +279,7 @@ impl NRProof {
         let Hm = match message.scheme {
             SchemeType::Scheme1 => {
                 let m = message.message_scheme1.unwrap();
-                
+
                 (H * m).to_affine()
             }
             SchemeType::Scheme2 => {

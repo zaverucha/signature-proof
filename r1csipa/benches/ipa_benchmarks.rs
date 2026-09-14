@@ -1,16 +1,16 @@
 #![allow(non_snake_case)]
 
+use core::iter;
 use criterion::{criterion_group, criterion_main, Criterion};
+use halo2curves::ff::Field;
+use halo2curves::group::prime::PrimeCurveAffine;
+use halo2curves::group::{Curve, Group};
+use halo2curves::t256::{Fq as Scalar, T256Affine, T256};
+use merlin::Transcript;
 use r1csipa::ipa_no_zk::InnerProductArg;
 use r1csipa::utils::{exp_iter, inner_product};
-use halo2curves::ff::Field;
-use halo2curves::group::{Curve, Group};
-use halo2curves::group::prime::PrimeCurveAffine;
-use halo2curves::t256::{Fq as Scalar, T256, T256Affine};
-use merlin::Transcript;
 use rand_core::OsRng;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
-use core::iter;
 
 const BENCHMARK_N: [usize; 4] = [2048, 4096, 8192, 16384];
 
@@ -24,7 +24,9 @@ fn random_bases(n: usize) -> Vec<T256Affine> {
     affine_points
 }
 
-fn setup_ipa_test(n: usize) -> (
+fn setup_ipa_test(
+    n: usize,
+) -> (
     Vec<T256Affine>,
     Vec<T256Affine>,
     T256Affine,
@@ -92,21 +94,24 @@ fn benchmark_ipa_create_orig_parallel(c: &mut Criterion) {
     for &n in &BENCHMARK_N {
         let (G, H, U, G_factors, H_factors, a, b, _P) = setup_ipa_test(n);
 
-        c.bench_function(&format!("IPA {}k create_orig_parallel", n / 1024), |bencher| {
-            bencher.iter(|| {
-                let mut transcript = Transcript::new(b"ipa_benchmark");
-                InnerProductArg::create_orig_parallel(
-                    &mut transcript,
-                    &U,
-                    &G_factors,
-                    &H_factors,
-                    G.clone(),
-                    H.clone(),
-                    a.clone(),
-                    b.clone(),
-                )
-            })
-        });
+        c.bench_function(
+            &format!("IPA {}k create_orig_parallel", n / 1024),
+            |bencher| {
+                bencher.iter(|| {
+                    let mut transcript = Transcript::new(b"ipa_benchmark");
+                    InnerProductArg::create_orig_parallel(
+                        &mut transcript,
+                        &U,
+                        &G_factors,
+                        &H_factors,
+                        G.clone(),
+                        H.clone(),
+                        a.clone(),
+                        b.clone(),
+                    )
+                })
+            },
+        );
     }
 }
 
@@ -137,7 +142,7 @@ fn benchmark_ipa_verify(c: &mut Criterion) {
         let (G, H, U, G_factors, H_factors, a, b, P) = setup_ipa_test(n);
 
         let _y_inv = Scalar::random(OsRng);
-        
+
         // Create a proof using the default create method
         let mut prover_transcript = Transcript::new(b"ipa_benchmark");
         let proof = InnerProductArg::create(
