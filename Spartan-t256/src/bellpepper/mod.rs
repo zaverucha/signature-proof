@@ -23,7 +23,7 @@ mod tests {
     use flate2::{write::ZlibEncoder, Compression};
     use itertools::Itertools;
     use merlin::Transcript;
-    use rand::random;
+    use rand::{rngs::OsRng, RngCore};
 
     type F = crate::scalar::Scalar;
 
@@ -122,7 +122,7 @@ mod tests {
 
     #[test]
     fn test_bits_to_num() {
-        let x = random::<u64>();
+        let x = OsRng.next_u64();
         let x_bits_le: Vec<bool> = (0..64).map(|i| ((x >> i) & 1) != 0).collect_vec();
 
         // First create the shape
@@ -145,7 +145,7 @@ mod tests {
 
     #[test]
     fn test_bellpepper_circuit_with_nizk() {
-        let x = random::<u64>();
+        let x = OsRng.next_u64();
         let x_bits_le: Vec<bool> = (0..64).map(|i| ((x >> i) & 1) != 0).collect_vec();
 
         // First create the shape
